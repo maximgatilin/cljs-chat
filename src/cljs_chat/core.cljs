@@ -1,22 +1,72 @@
 (ns cljs-chat.core
-    (:require [rum.core :as rum]))
+  (:require [rum.core :refer [defc] :as rum]
+            [secretary.core :as secretary :include-macros true]
+            [accountant.core :as accountant]
+            [goog.events :as events]
+            [goog.history.EventType :as HistoryEventType]
 
-(enable-console-print!)
-
-(println "This text is printed from src/cljs-chat/core.cljs. Go ahead and edit it and see reloading in action.")
-
-;; define your app data so that it doesn't get over-written on reload
+            [components.login :refer [login]]
+            [components.chat :refer [chat]])
+  (:import goog.History))
 
 (defonce app-state (atom {:text "Hello world!"}))
 
+(def currentPage (atom login))
 
-(rum/defc hello-world []
+(defc page < rum/reactive [] [((rum/react currentPage))])
+
+;; -------------------------
+;; Routes
+(secretary/defroute "/" []
+                    (do (js/console.log "/ route")
+                        (reset! currentPage login)))
+
+(secretary/defroute "/chat" []
+                    (do (js/console.log "chat route")
+                        (reset! currentPage chat)))
+
+;; -------------------------
+;; History
+;; must be called after routes have been defined
+
+(defn hook-browser-navigation! []
+  (doto (History.)
+    (events/listen
+      HistoryEventType/NAVIGATE
+      (fn [event]
+        (secretary/dispatch! (.-token event))))
+    (.setEnabled true)))
+
+(hook-browser-navigation!)
+
+;; -------------------------
+;; Initialize app
+
+(defc hello-world []
   [:div
-   [:h1 (:text @app-state)]
-   [:h3 "Edit this and watch it change!"]])
+   [:nav
+    [:a {:href "/chat"} "Chat"]
+    [:a {:href "/"} "Login"]
+    ]
+   (page)
+   ])
 
-(rum/mount (hello-world)
-           (. js/document (getElementById "app")))
+(defn mount-root []
+  (rum/mount (hello-world)
+             (. js/document (getElementById "app"))))
+
+(defn init! []
+  (accountant/configure-navigation!
+    {:nav-handler
+     (fn [path]
+       (secretary/dispatch! path))
+     :path-exists?
+     (fn [path]
+       (secretary/locate-route path))})
+  (accountant/dispatch-current!)
+  (mount-root))
+
+(init!)
 
 (defn on-js-reload []
   ;; optionally touch your app-state to force rerendering depending on
